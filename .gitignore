@@ -1,0 +1,16 @@
+# Secrets and local state
+.env
+.env.*
+!.env.example
+client_secret_*.json
+*.pem
+.sessions.json
+
+# Dependencies and archives
+node_modules/
+*.zip
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.log
