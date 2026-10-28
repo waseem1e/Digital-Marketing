@@ -6,9 +6,9 @@ const bad = m => { const e = new Error(m); e.user = true; return e; };
 const micros = v => String(Math.round(Number(v) * 1e6));
 const str = (x, max) => typeof x === "string" && x.trim().length > 0 && x.length <= max;
 
-function validate(b, maxBudget) {
+function validate(b, maxBudget, opt) {
   if (!b || typeof b !== "object") throw bad("Invalid request.");
-  if (!/^GWS-\d{8}(-.+)?$/.test(String(b.name || "")) || b.name.length > 255) throw bad("Campaign name is not in the required format.");
+  if ((!(opt && opt.anyName) && !/^GWS-\d{8}(-.+)?$/.test(String(b.name || ""))) || !str(b.name, 255)) throw bad("Campaign name is not in the required format.");
   if (!money.test(b.budget || "") || +b.budget <= 0) throw bad("Daily budget is invalid.");
   if (!money.test(b.ceiling || "") || +b.budget > +b.ceiling) throw bad("Daily budget is above the approved ceiling.");
   if (maxBudget && +b.budget > +maxBudget) throw bad("Daily budget is above the limit set on the server (MAX_DAILY_BUDGET).");
@@ -16,7 +16,11 @@ function validate(b, maxBudget) {
   if (b.start && b.end && b.start > b.end) throw bad("Start date is after the end date.");
   if (!["CLICKS", "MANUAL"].includes(b.bidding)) throw bad("Bidding strategy is invalid.");
   if (b.cpc && (!money.test(b.cpc) || +b.cpc <= 0)) throw bad("Max cost per click is invalid.");
-  if (b.bidding === "MANUAL" && !b.cpc) throw bad("Manual CPC needs a max cost per click.");
+  if (b.bidding === "MANUAL" && !b.cpc && !(b.opts && b.opts.roas === true)) throw bad("Manual CPC needs a max cost per click.");
+  // Campaign options: each is a plain Yes/No. Target ROAS also needs a percentage (400 means A$4 of conversion value per A$1 spent).
+  b.opts = b.opts || {};
+  ["aiMax", "searchPartners", "display", "roas"].forEach(k => { if (typeof b.opts[k] !== "boolean") b.opts[k] = false; });
+  if (b.opts.roas && !(+b.opts.roasPct >= 10 && +b.opts.roasPct <= 10000)) throw bad("Target ROAS must be between 10% and 10000%.");
   if (b.cpc && +b.cpc > +b.budget) throw bad("Max cost per click is above the daily budget.");
   if (!Array.isArray(b.suburbs) || !b.suburbs.length || b.suburbs.length > 100 || !b.suburbs.every(s => str(s, 60))) throw bad("Select between 1 and 100 suburbs.");
   if (!Array.isArray(b.negatives) || b.negatives.length > 100 || !b.negatives.every(x => str(x, 80) && !/[\[\]"]/.test(x))) throw bad("Negative keywords are invalid.");
@@ -36,7 +40,7 @@ function validate(b, maxBudget) {
       if (!/^[a-z0-9 ]{1,80}$/.test(t) || t.split(" ").length > 10 || !["BROAD", "PHRASE", "EXACT"].includes(m)) throw bad(g.name + ": invalid keyword “" + t + "”.");
       if (!seen.has(t + "|" + m)) { seen.add(t + "|" + m); kw.push({ t, m }); }
     }
-    if (!kw.length || kw.length > 500) throw bad(g.name + ": needs 1 to 500 keywords.");
+    if ((!kw.length && !(opt && opt.anyName)) || kw.length > 500) throw bad(g.name + ": needs 1 to 500 keywords.");
     return { name: g.name.trim(), url: g.url, headlines: H, descriptions: D, keywords: kw };
   });
   return b;
@@ -47,10 +51,12 @@ function buildOps(b, cid, geo) {
   const C = "customers/" + cid, BUD = C + "/campaignBudgets/-1", CAM = C + "/campaigns/-2", ops = [];
   ops.push({ campaignBudgetOperation: { create: { resourceName: BUD, name: b.name + " budget", amountMicros: micros(b.budget), deliveryMethod: "STANDARD", explicitlyShared: false } } });
   const camp = { resourceName: CAM, name: b.name, status: "PAUSED", advertisingChannelType: "SEARCH", campaignBudget: BUD,
-    networkSettings: { targetGoogleSearch: true, targetSearchNetwork: false, targetContentNetwork: false, targetPartnerSearchNetwork: false },
+    networkSettings: { targetGoogleSearch: true, targetSearchNetwork: b.opts.searchPartners, targetContentNetwork: b.opts.display, targetPartnerSearchNetwork: false },
     geoTargetTypeSetting: { positiveGeoTargetType: "PRESENCE" }, containsEuPoliticalAdvertising: "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING" };
-  if (b.bidding === "MANUAL") camp.manualCpc = { enhancedCpcEnabled: false };
+  if (b.opts.roas) camp.maximizeConversionValue = { targetRoas: +b.opts.roasPct / 100 };
+  else if (b.bidding === "MANUAL") camp.manualCpc = { enhancedCpcEnabled: false };
   else camp.targetSpend = b.cpc ? { cpcBidCeilingMicros: micros(b.cpc) } : {};
+  if (b.opts.aiMax) camp.aiMaxSetting = { enableAiMax: true };
   if (b.start) camp.startDateTime = b.start + " 00:00:00";
   if (b.end) camp.endDateTime = b.end + " 23:59:59";
   ops.push({ campaignOperation: { create: camp } });
@@ -61,7 +67,7 @@ function buildOps(b, cid, geo) {
   const dropAges = b.bands.length && b.bands.length < 6 ? Object.keys(AGE).filter(k => !b.bands.includes(k)) : [];
   b.adGroups.forEach((g, i) => {
     const AG = C + "/adGroups/-" + (10 + i), ag = { resourceName: AG, name: g.name, campaign: CAM, status: "ENABLED", type: "SEARCH_STANDARD" };
-    if (b.bidding === "MANUAL") ag.cpcBidMicros = micros(b.cpc);
+    if (b.bidding === "MANUAL" && !b.opts.roas) ag.cpcBidMicros = micros(b.cpc);
     ops.push({ adGroupOperation: { create: ag } });
     g.keywords.forEach(k => ops.push({ adGroupCriterionOperation: { create: { adGroup: AG, status: "ENABLED", keyword: { text: k.t, matchType: k.m } } } }));
     if (noMale) ops.push({ adGroupCriterionOperation: { create: { adGroup: AG, negative: true, gender: { type: "MALE" } } } });

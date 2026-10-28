@@ -18,4 +18,14 @@ Run on your own computer. Needs Node.js 20.6 or newer.
 ## Optional: cap the daily budget the app will accept
 Set `MAX_DAILY_BUDGET=100` (or any number) in `.env` to refuse any campaign above that, on top of your own Approved daily ceiling field.
 
-Tokens stay on the server (in memory, so you reconnect after a restart). Nothing in this version creates or changes campaigns.
+## Working with existing campaigns (Step 5, Existing Campaign)
+- **Analyse**: KPI scorecard and suggestions for one campaign, plus its Campaign options (AI Max, networks, Target ROAS).
+- **Compare Campaigns**: money settings and results since each campaign started, with predictions as you edit amounts.
+- **Edit in Campaign builder**: loads a live Search campaign and all its ad groups into the builder; changes are checked by Google, listed for confirmation, then saved.
+Only live (running) campaigns can be changed. Every change asks for confirmation first and is read back from Google Ads afterwards.
+
+## Files
+- `server.js`: sign-in, Google Ads calls, analysis, compare and options routes. `campaign.js`: validation and the create request. `edit.js`: editing a live campaign.
+- `public/index.html`: the page. `public/compare.js`, `public/options.js`, `public/edit-mode.js`: Compare, Analysis options and edit mode.
+
+Sign-ins are kept in `.sessions.json` (private, git-ignored) so a restart doesn't sign you out; they last 8 hours.

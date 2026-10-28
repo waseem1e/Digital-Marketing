@@ -38,6 +38,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 :focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px}
 .row>div{flex:1 1 140px}
+.opts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:start}@media(max-width:640px){.opts{grid-template-columns:1fr}}.opts label{min-height:2.6em;display:flex;align-items:flex-end}.opts .note{display:block}
 .chip{display:inline-block;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:500;background:var(--paper);border:1px solid var(--slat);color:var(--ink)}
 .chip.warn{background:var(--warnbg);color:var(--warn);border-color:transparent}.chip.bad{background:var(--badbg);color:var(--bad);border-color:transparent}.chip.ok{background:var(--okbg);color:var(--ok);border-color:transparent}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
@@ -138,7 +139,7 @@ dialog h2{font-size:18px;font-weight:500;margin:0 0 10px}
 <div><label for="bid">Bidding strategy</label><select id="bid"><option value="CLICKS">Maximise clicks</option><option value="MANUAL">Manual CPC</option></select></div>
 <div><label for="cpc">Max cost per click (A$)</label><input type="text" id="cpc" inputmode="decimal" placeholder="e.g. 2.50"></div></div>
 <label for="neg">Negative keywords (one per line; blocks searches you don’t want)</label><textarea id="neg" rows="3"></textarea>
-<p class="note">Search network only: Search Partners and Display are off. The campaign and all ad groups are created paused. Set up conversion tracking (calls or form submits) in Google Ads to see which keywords bring enquiries.</p></section></section><section class="step"><div class="stephead"><span class="num">4</span><div><h2>Ads and ad groups</h2><p>Write the ad template once. Preview how each product’s ad group will look.</p></div></div><div class="grid2"><section class="panel" aria-labelledby="h-ad"><h3 id="h-ad">Ad template</h3>
+<p class="note">Networks, AI Max and Target ROAS are set in Campaign options below. The campaign and all ad groups are created paused. Set up conversion tracking (calls or form submits) in Google Ads to see which keywords bring enquiries.</p></section><section class="panel" aria-labelledby="h-opt" style="margin-top:16px"><h3 id="h-opt">Campaign options</h3><div class="opts"><div><label for="o-aimax">Optimise your campaign with AI Max</label><select id="o-aimax"><option value="no">No</option><option value="yes">Yes</option></select><span class="note">Google finds more searches like yours. E.g. “blinds Penrith” also shows for “window shades near me”.</span></div><div><label for="o-search">Search Network (Google search partners)</label><select id="o-search"><option value="no">No</option><option value="yes">Yes</option></select><span class="note">Also show ads on sites that use Google search. E.g. search results on a news site.</span></div><div><label for="o-display">Display Network</label><select id="o-display"><option value="no">No</option><option value="yes">Yes</option></select><span class="note">Also show ads on websites and apps. E.g. a banner on a home-decor blog.</span></div></div><div class="opts" style="margin-top:12px"><div><label for="o-roas">Target ROAS</label><select id="o-roas"><option value="no">No</option><option value="yes">Yes</option></select><span class="note">Bid for sales value, not clicks. E.g. 400% aims for A$400 of sales per A$100 spent.</span></div><div id="o-roaswrap"><label for="o-roaspct">Target ROAS (%)</label><input type="text" id="o-roaspct" inputmode="decimal" value="400" disabled><span class="note">Only editable when Target ROAS is Yes.</span></div></div><p class="note">Target ROAS replaces the bidding strategy above. You can change these later on the Analysis page.</p></section></section><section class="step"><div class="stephead"><span class="num">4</span><div><h2>Ads and ad groups</h2><p>Write the ad template once. Preview how each product’s ad group will look.</p></div></div><div class="grid2"><section class="panel" aria-labelledby="h-ad"><h3 id="h-ad">Ad template</h3>
 <label for="adh">Headlines (one per line, 3 to 15, max 30 characters each)</label>
 <textarea id="adh" rows="6"></textarea>
 <label for="add" style="margin-top:8px">Descriptions (one per line, 2 to 4, max 90 characters each)</label>
@@ -149,6 +150,7 @@ dialog h2{font-size:18px;font-weight:500;margin:0 0 10px}
 <div class="row"><div><label for="cname">Campaign Name</label><input type="text" id="cname"></div></div>
 <p class="note">Built from today’s Sydney date and the selected products, for example GWS-20261024-Duette-Curtains. You can edit the name; clear the box to rebuild it.</p>
 <p class="note" id="cstatus" role="status">Status: not created.</p>
+<div id="cprog" hidden style="margin:8px 0 12px"><div style="height:10px;border-radius:99px;background:var(--paper);border:1px solid var(--slat);overflow:hidden"><div id="cprogbar" style="height:100%;width:0;background:var(--acc);transition:width .3s"></div></div><p id="cprogtxt" style="margin:6px 0 0"></p></div>
 <div class="err" id="errs" role="alert"></div>
 <button class="pri" id="create" type="button">Create Campaign in Google Ads</button>
 <p class="note">The campaign is prepared as paused. Activating it needs a separate approval.</p>
@@ -218,7 +220,7 @@ function updateName(){if(!nameEdited)$("#cname").value=defName()}
 function stamp(){var p=sydNow();return p.day+"/"+p.month+"/"+p.year+" "+p.hour+":"+p.minute+" Sydney"}
 function iso(d){var p=sydParts(d,{day:"2-digit",month:"2-digit",year:"numeric"});return p.year+"-"+p.month+"-"+p.day}
 function log(m){logN.unshift(stamp()+": "+m);$("#log").innerHTML=logN.slice(0,12).map(function(x){return"<li>"+esc(x)+"</li>"}).join("")}
-function sig(){return JSON.stringify([$("#cname").value,$("#budget").value,$("#enddate").value,profileText(),$("#adh").value,$("#add").value,$("#cstartd").value,$("#bid").value,$("#cpc").value,$("#neg").value,$("#ceiling").value,Array.from(subs).sort(),Array.from(kwSel).sort(),prods.map(function(p){return[p.n,p.url,p.sel]})])}
+function sig(){return JSON.stringify([JSON.stringify(campOpts()),$("#cname").value,$("#budget").value,$("#enddate").value,profileText(),$("#adh").value,$("#add").value,$("#cstartd").value,$("#bid").value,$("#cpc").value,$("#neg").value,$("#ceiling").value,Array.from(subs).sort(),Array.from(kwSel).sort(),prods.map(function(p){return[p.n,p.url,p.sel]})])}
 
 function renderSubs(){var q=$("#subq").value.trim().toLowerCase();
 $("#sublist").innerHTML=SUBURBS.filter(function(s){return lab(s).toLowerCase().indexOf(q)>-1}).map(function(s){return'<label><input type="checkbox" data-sub="'+esc(s)+'"'+(subs.has(s)?" checked":"")+'> '+esc(lab(s))+'</label>'}).join("")||'<p class="note" style="padding:8px">No suburb matches. Check the spelling.</p>';
@@ -279,9 +281,9 @@ $("#subnone").addEventListener("click",function(){subs.clear();renderSubs();touc
 $("#kwfilter").addEventListener("input",renderKw);
 $("#kwall").addEventListener("click",function(){var q=$("#kwfilter").value.trim().toLowerCase();kws.forEach(function(k){if(!q||k.t.toLowerCase().indexOf(q)>-1)kwSel.add(k.t)});renderKw();touch()});
 $("#kwnone").addEventListener("click",function(){kwSel.clear();renderKw();touch()});
-function loadDefaultKw(){kws=DEFAULT_KWS.map(function(x){return{t:x[0],s:x[1],comp:x[2],m:"Broad"}});kwSel=new Set(kws.map(function(k){return k.t}));
-$("#kwmeta").innerHTML="Default keyword list from your Google Ads Keyword Planner export (1 Oct 2025 – 30 Sep 2026) · "+kws.length+" keywords · all selected by default.";
-log("Loaded "+kws.length+" default keywords (all selected)")}
+function loadDefaultKw(){kws=DEFAULT_KWS.map(function(x){return{t:x[0],s:x[1],comp:x[2],m:"Broad"}});kwSel=new Set(kws.slice().sort(function(a,b){return b.s-a.s}).slice(0,100).map(function(k){return k.t}));
+$("#kwmeta").innerHTML="Default keyword list from your Google Ads Keyword Planner export (1 Oct 2025 – 30 Sep 2026) · "+kws.length+" keywords · the 100 most-searched are selected (Google allows up to 500 per ad group).";
+log("Loaded "+kws.length+" default keywords (100 most-searched selected)")}
 $("#kwdefault").addEventListener("click",function(){loadDefaultKw();renderKw();touch()});
 document.addEventListener("click",function(e){if(!e.target.matches(".sortbtn"))return;if(!$("#kw-head").contains(e.target))return;var k=e.target.dataset.sort;kwSort.dir=kwSort.key===k?-kwSort.dir:1;kwSort.key=k;renderKw()});
 $("#kwbody").addEventListener("change",function(e){var k=e.target.dataset.kw;if(!k)return;e.target.checked?kwSel.add(k):kwSel.delete(k);touch()});
@@ -321,6 +323,8 @@ $("#kwmeta").innerHTML="Period "+esc(f)+" to "+esc(t)+" · "+subs.size+" suburb"
 log("Fetched "+kws.length+" suggested keywords");renderKw();touch()});
 $("#budget").addEventListener("input",function(){var v=$("#budget").value.trim();$("#monthly").textContent=/^\d+(\.\d{1,2})?$/.test(v)&&+v>0?"Estimated monthly: about A$"+(v*30.4).toFixed(2)+". Estimate only; actual Google Ads spend varies.":"Estimated monthly: enter a valid budget."});
 document.addEventListener("input",touch);document.addEventListener("change",touch);
+function yesno(id){return $(id).value==="yes"?"Yes":"No"}
+$("#o-roas").addEventListener("change",function(){var on=$("#o-roas").value==="yes";$("#o-roaspct").disabled=!on;$("#bid").disabled=on;$("#cpc").disabled=on});
 function touch(e){if(e&&e.target&&(e.target.dataset.adh!==undefined||e.target.dataset.add!==undefined))return;
 updateName();renderAd();if(lastSig!==null&&sig()!==lastSig){lastSig=null;$("#cstatus").textContent="Status: configuration changed since the last review. Review and confirm again.";log("Configuration changed; approval cleared")}}
 
@@ -379,10 +383,11 @@ function renderAd(){var ps=selProds(),p=ps[0]||{n:"Blinds",url:"https://greaterw
 $("#adprev").innerHTML=ps.length?adCard(p,fit(p),"adprev"):adCardStatic(p,fit(p));
 adNote();renderGroups()}
 function campErrors(){var er=[],s=$("#cstartd").value,e=$("#enddate").value,c=$("#cpc").value.trim(),b=$("#budget").value.trim(),neg=adLines("#neg"),m=/^\d+(\.\d{1,2})?$/;
+if($("#o-roas").value==="yes"&&!(+$("#o-roaspct").value>=10&&+$("#o-roaspct").value<=10000))er.push("Target ROAS must be a percentage between 10 and 10000.");
 if(s&&s<iso(new Date()))er.push("Campaign Start Date can’t be in the past.");
 if(s&&e&&s>e)er.push("Campaign Start Date must be on or before the End Date.");
 if(c&&(!m.test(c)||+c<=0))er.push("Max cost per click must be above zero with up to two decimals.");
-if($("#bid").value==="MANUAL"&&!c)er.push("Manual CPC needs a max cost per click.");
+if($("#bid").value==="MANUAL"&&!c&&$("#o-roas").value!=="yes")er.push("Manual CPC needs a max cost per click.");
 if(m.test(c)&&m.test(b)&&+c>+b)er.push("Max cost per click can’t be above the daily budget.");
 if(neg.length>100||neg.some(function(x){return x.length>80||/[\[\]"]/.test(x)}))er.push("Negative keywords: up to 100 lines, 80 characters each, no brackets or quotes.");
 if($("#cname").value.length>255)er.push("Campaign name is over Google’s 255-character limit. Select fewer products.");
@@ -429,18 +434,13 @@ function suggestionsHtml(sugg){if(!sugg.length)return'<p class="note">No issues 
 return'<ul style="padding-left:0;list-style:none;margin:0">'+sugg.map(function(s){return'<li style="padding:10px 0;border-bottom:1px solid var(--slat)"><span class="chip '+(s.severity==="warn"?"warn":s.severity==="ok"?"ok":"")+'">'+(s.severity==="warn"?"Review":s.severity==="ok"?"Healthy":"Tip")+'</span> '+esc(s.text)+
 (s.autofix?'<div class="row" style="margin-top:8px;align-items:center"><label class="pill" style="flex:0 0 auto"><input type="checkbox" data-fix="'+esc(s.id)+'"'+(s.applied?" disabled checked":"")+'> '+(s.applied?"Applied":"Include")+'</label><div style="flex:1 1 160px"><label for="fv-'+esc(s.id)+'" style="font-weight:400;font-size:12px">'+esc(s.fixLabel)+'</label><input type="text" id="fv-'+esc(s.id)+'" data-fixval="'+esc(s.id)+'" value="'+esc(s.autofix.value)+'"'+(s.applied?" disabled":"")+(s.autofix.fixed?" readonly":"")+'></div></div>':'')+
 '</li>'}).join("")+'<div class="row" style="margin-top:12px"><div style="flex:0 0 auto"><button class="pri" id="ana-apply" type="button">Apply selected changes</button></div></div>'}
-function renderAnalysis(){if(anaMode==="single"){var d=anaData;$("#ana-sub").textContent="SEO/Ads expert review of “"+d.name+"”"+(d.sample?" (sample data, dry run)":"");
+function renderAnalysis(){if(anaMode==="single"){var d=anaData;$("#ana-sub").textContent="Google Ads review of “"+d.name+"”"+(d.sample?" (sample data, dry run)":"");
 $("#ana-body").innerHTML='<div class="grid3"><div class="panel"><h3>Campaign summary</h3>'+summaryHtml(d)+'</div><div class="panel"><h3>'+(d.kpis?"KPIs vs targets (last 30 days)":"Performance (last 30 days)")+'</h3>'+metricsHtml(d)+'</div><div class="panel"><h3>Suggestions</h3>'+suggestionsHtml(d.suggestions)+'</div></div>'}
-else if(anaMode==="compare"){var arr=anaData;$("#ana-sub").textContent="Comparing "+arr.length+" campaigns"+(arr.some(function(x){return x.sample})?" (sample data, dry run)":"");
-var rows=[["Status",function(x){return x.status}],["Daily budget",function(x){return"A$"+x.budget}],["Bidding",function(x){return x.bidding}],["Locations",function(x){return x.locations}],["Ad groups",function(x){return x.adGroups}],["Keywords",function(x){return x.keywords}],["Negative keywords",function(x){return x.negatives}],["Impressions (30d)",function(x){return x.metrics.impressions}],["Clicks (30d)",function(x){return x.metrics.clicks}],["Cost (30d)",function(x){return"A$"+x.metrics.cost}],["CTR",function(x){return x.metrics.ctr}],["Avg. CPC",function(x){return"A$"+x.metrics.avgCpc}]];
-$("#ana-body").innerHTML='<div class="scroll tw"><table><thead><tr><th>Metric</th>'+arr.map(function(x){return'<th>'+esc(x.name)+'</th>'}).join("")+'</tr></thead><tbody>'+
-rows.map(function(r){return'<tr><td>'+r[0]+'</td>'+arr.map(function(x){return'<td>'+esc(String(r[1](x)))+'</td>'}).join("")+'</tr>'}).join("")+'</tbody></table></div>'}}
+}
 function analyseCampaign(id){var c=camps.filter(function(x){return x.id===id})[0];if(!c)return;showTab("analysis");$("#ana-sub").textContent="Fetching campaign data from Google Ads…";$("#ana-body").innerHTML='<p class="note">Fetching…</p>';
 fetchDetail(id).then(function(d){anaMode="single";anaData=d;log("Analysed campaign "+c.name);renderAnalysis()}).catch(function(){anaMode="single";anaData=sampleDetail(c);log("Analysed campaign "+c.name+" (sample data, dry run)");renderAnalysis()})}
-function compareCampaigns(ids){var sel=camps.filter(function(x){return ids.indexOf(x.id)>-1});showTab("analysis");$("#ana-sub").textContent="Fetching campaign data from Google Ads…";$("#ana-body").innerHTML='<p class="note">Fetching…</p>';
-Promise.all(ids.map(fetchDetail)).then(function(arr){anaMode="compare";anaData=arr;log("Compared "+arr.length+" campaigns");renderAnalysis()}).catch(function(){anaMode="compare";anaData=sel.map(sampleDetail);log("Compared "+sel.length+" campaigns (sample data, dry run)");renderAnalysis()})}
 $("#canalyse").addEventListener("click",function(){var ids=Array.from(campSel);if(ids.length===1)analyseCampaign(ids[0])});
-$("#ccompare").addEventListener("click",function(){var ids=Array.from(campSel);if(ids.length>=2)compareCampaigns(ids)});
+$("#ccompare").addEventListener("click",function(){var ids=Array.from(campSel);if(ids.length>=2)compareMoney(ids)});
 function fixValue(s){var el=document.querySelector('[data-fixval="'+s.id+'"]');return el?el.value.trim():s.autofix.value}
 function describeFix(s,val){if(s.autofix.type==="budget")return"Increase daily budget to A$"+(+val).toFixed(2);
 if(s.autofix.type==="negatives")return"Add negative keyword(s): "+val;
@@ -495,24 +495,31 @@ $("#create").addEventListener("click",function(){if(busy)return;var er=problems(
 $("#errs").innerHTML=er.length?"<ul><li>"+er.map(esc).join("</li><li>")+"</li></ul>":"";if(er.length)return;
 var live=prods.filter(function(p){return p.sel});
 var sel=kws.filter(function(k){return kwSel.has(k.t)});
-$("#dbody").innerHTML='<p>Create a new Google Ads campaign named <b>“'+esc($("#cname").value.trim())+'”</b> with the selected suburbs, products, keywords and daily budget? '+(acctMode==="live"?"This creates it in your connected Google Ads account ("+esc(acctLabel())+"), paused, so it will not spend until you enable it there.":"This is a dry run: nothing will be sent to Google Ads.")+'</p><ul><li>Account: '+esc(acctLabel())+' ('+(acctMode==="live"?"will be created":"dry run")+')</li><li>Type and state: Search, paused</li><li>Daily budget: A$'+(+$("#budget").value).toFixed(2)+' (ceiling A$'+(+$("#ceiling").value).toFixed(2)+')</li><li>End date: '+esc($("#enddate").value||"none (runs until paused)")+'</li><li>Locations ('+subs.size+'): '+esc(Array.from(subs).sort().map(lab).join(", "))+'. Setting: people in or regularly in these locations</li><li>Ad groups ('+live.length+'): '+esc(live.slice(0,6).map(function(p){return p.n+" → "+p.url.replace("https://greaterwesternshades.com.au","")}).join("; "))+(live.length>6?" and "+(live.length-6)+" more":"")+'</li><li>Bidding: '+esc($("#bid").selectedOptions[0].text)+($("#cpc").value.trim()?", max A$"+esc($("#cpc").value.trim())+" per click":"")+'</li><li>Starts: '+esc($("#cstartd").value||"on creation")+'</li><li>Negative keywords: '+adLines("#neg").length+'</li><li>Keywords ('+sel.length+'): '+esc(sel.slice(0,8).map(function(k){return k.t+" ["+k.m+"]"}).join(", "))+(sel.length>8?" and "+(sel.length-8)+" more":"")+'</li><li>Audience: '+esc(profileText())+'</li><li>Ad template: '+adLines("#adh").length+' headlines, '+adLines("#add").length+' descriptions; each ad group opens its own product page</li></ul>';
+$("#dbody").innerHTML='<p>Create a new Google Ads campaign named <b>“'+esc($("#cname").value.trim())+'”</b> with the selected suburbs, products, keywords and daily budget? '+(acctMode==="live"?"This creates it in your connected Google Ads account ("+esc(acctLabel())+"), paused, so it will not spend until you enable it there.":"This is a dry run: nothing will be sent to Google Ads.")+'</p><ul><li>Account: '+esc(acctLabel())+(acctMode==="live"?" (will be created)":"")+'</li><li>Type and state: Search, paused</li><li>Options: AI Max '+yesno("#o-aimax")+', Search Network '+yesno("#o-search")+', Display Network '+yesno("#o-display")+', Target ROAS '+($("#o-roas").value==="yes"?esc($("#o-roaspct").value.trim())+"%":"No")+'</li><li>Daily budget: A$'+(+$("#budget").value).toFixed(2)+' (ceiling A$'+(+$("#ceiling").value).toFixed(2)+')</li><li>End date: '+esc($("#enddate").value||"none (runs until paused)")+'</li><li>Locations ('+subs.size+'): '+esc(Array.from(subs).sort().map(lab).join(", "))+'. Setting: people in or regularly in these locations</li><li>Ad groups ('+live.length+'): '+esc(live.slice(0,6).map(function(p){return p.n+" → "+p.url.replace("https://greaterwesternshades.com.au","")}).join("; "))+(live.length>6?" and "+(live.length-6)+" more":"")+'</li><li>Bidding: '+esc($("#bid").selectedOptions[0].text)+($("#cpc").value.trim()?", max A$"+esc($("#cpc").value.trim())+" per click":"")+'</li><li>Starts: '+esc($("#cstartd").value||"on creation")+'</li><li>Negative keywords: '+adLines("#neg").length+'</li><li>Keywords ('+sel.length+'): '+esc(sel.slice(0,8).map(function(k){return k.t+" ["+k.m+"]"}).join(", "))+(sel.length>8?" and "+(sel.length-8)+" more":"")+'</li><li>Audience: '+esc(profileText())+'</li><li>Ad template: '+adLines("#adh").length+' headlines, '+adLines("#add").length+' descriptions; each ad group opens its own product page</li></ul>';
 $("#dlg").showModal()});
 $("#dcancel").addEventListener("click",function(){$("#dlg").close();log("Creation cancelled; no changes made")});
+function campOpts(){var y=function(id){return $(id).value==="yes"};return{aiMax:y("#o-aimax"),searchPartners:y("#o-search"),display:y("#o-display"),roas:y("#o-roas"),roasPct:$("#o-roaspct").value.trim()}}
+// Create-campaign progress. Google Ads creates everything in one request, so the bar moves through the stages while it waits and fills when Google confirms.
+var cprogT=null;
+function cprogStart(custom){var p=0,steps=custom||[[0,"Checking the campaign name"],[15,"Matching suburbs to Google locations"],[35,"Creating the campaign, ad groups, keywords and ads"],[75,"Verifying in Google Ads"]];$("#cprog").hidden=false;$("#cprogbar").style.background="var(--acc)";$("#cprogtxt").style.color="";clearInterval(cprogT);
+var tick=function(){p+=(92-p)*0.06;$("#cprogbar").style.width=p.toFixed(0)+"%";var st=steps.filter(function(x){return p>=x[0]}).pop();$("#cprogtxt").textContent=st[1]+"… "+p.toFixed(0)+"%"};tick();cprogT=setInterval(tick,300)}
+function cprogEnd(ok,msg){clearInterval(cprogT);$("#cprog").hidden=false;$("#cprogbar").style.width="100%";$("#cprogbar").style.background=ok?"var(--ok)":"var(--bad)";$("#cprogtxt").innerHTML=ok?'<b style="color:var(--ok)">Completed Successfully!</b>':'<b style="color:var(--bad)">Not completed.</b> '+esc(msg||"")}
 function payload(){var bands=bandList().map(function(x){return x==="65-200"?"65+":x});
 return{name:$("#cname").value.trim(),budget:$("#budget").value.trim(),ceiling:$("#ceiling").value.trim(),start:$("#cstartd").value,end:$("#enddate").value,
-bidding:$("#bid").value,cpc:$("#cpc").value.trim(),suburbs:Array.from(subs),negatives:adLines("#neg"),male:$("#gm").checked,female:$("#gf").checked,bands:bands,
+bidding:$("#bid").value,cpc:$("#cpc").value.trim(),suburbs:Array.from(subs),opts:campOpts(),negatives:adLines("#neg"),male:$("#gm").checked,female:$("#gf").checked,bands:bands,
 adGroups:selProds().map(function(p){var f=fit(p);return{name:p.n,url:p.url,headlines:f.h,descriptions:f.d,keywords:groupKw(p)}})}}
 $("#dok").addEventListener("click",function(){if(busy)return;busy=true;$("#dok").disabled=true;$("#create").disabled=true;$("#dlg").close();
-if(acctMode!=="live"){$("#cstatus").textContent="Status: running dry run…";log("Dry-run submission started for “"+$("#cname").value.trim()+"”");
-setTimeout(function(){busy=false;$("#dok").disabled=false;$("#create").disabled=false;lastSig=sig();$("#cstatus").textContent="Status: dry run complete. No campaign was created in Google Ads, so there is no campaign ID.";log("Dry run finished; Google Ads not contacted")},700);return}
-$("#cstatus").textContent="Status: sending to Google Ads…";log("Submitting “"+$("#cname").value.trim()+"” to Google Ads");
+if(acctMode!=="live"){cprogStart();$("#cstatus").textContent="Status: running dry run…";log("Dry-run submission started for “"+$("#cname").value.trim()+"”");
+setTimeout(function(){busy=false;$("#dok").disabled=false;$("#create").disabled=false;cprogEnd(true);lastSig=sig();$("#cstatus").textContent="Status: dry run complete. No campaign was created in Google Ads, so there is no campaign ID.";log("Dry run finished; Google Ads not contacted")},700);return}
+cprogStart();$("#cstatus").textContent="Status: sending to Google Ads…";log("Submitting “"+$("#cname").value.trim()+"” to Google Ads");
 fetch("/api/campaigns/create",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload())}).then(function(r){return r.json()}).then(function(j){busy=false;$("#dok").disabled=false;$("#create").disabled=false;
-if(j.ok){lastSig=sig();$("#cstatus").textContent="Status: created in Google Ads as campaign "+j.campaignId+", paused, with "+j.adGroups+" ad group(s) and "+j.keywords+" keyword(s). Verified by re-reading it from Google Ads.";log("Created campaign "+j.campaignId+" ("+j.adGroups+" ad groups, "+j.keywords+" keywords), paused");loadCamps()}
-else{$("#cstatus").textContent="Status: "+(j.message||"Google Ads did not confirm the campaign was created.");log("Creation did not complete: "+(j.message||"unknown reason"))}
-}).catch(function(){busy=false;$("#dok").disabled=false;$("#create").disabled=false;$("#cstatus").textContent="Status: could not reach the app server. Check it is running, then try again.";log("Creation failed: could not reach the server")})});
+if(j.ok){cprogEnd(true);lastSig=sig();$("#cstatus").textContent="Status: created in Google Ads as campaign "+j.campaignId+", paused, with "+j.adGroups+" ad group(s) and "+j.keywords+" keyword(s). Verified by re-reading it from Google Ads.";log("Created campaign "+j.campaignId+" ("+j.adGroups+" ad groups, "+j.keywords+" keywords), paused");loadCamps()}
+else{cprogEnd(false,j.message||"Google Ads did not confirm the campaign was created.");$("#cstatus").textContent="Status: "+(j.message||"Google Ads did not confirm the campaign was created.");log("Creation did not complete: "+(j.message||"unknown reason"))}
+}).catch(function(){busy=false;cprogEnd(false,"Could not reach the app server.");$("#dok").disabled=false;$("#create").disabled=false;$("#cstatus").textContent="Status: could not reach the app server. Check it is running, then try again.";log("Creation failed: could not reach the server")})});
 var d=new Date(),f=new Date(d);f.setMonth(f.getMonth()-6);$("#dto").value=iso(d);$("#dfrom").value=iso(f);$("#cname").value=defName();
 $("#cname").addEventListener("input",function(){nameEdited=$("#cname").value.trim()!==""});loadCamps();initAd();renderSubs();renderProds();loadDefaultKw();renderKw();renderCatalog();log("Draft created as "+defName()+" (Sydney date)");
 var gq=new URLSearchParams(location.search).get("gads");history.replaceState(null,"",location.pathname);
 loadConn().then(function(){if(gq&&FLASH[gq])$("#connmsg").textContent=FLASH[gq];if(gq==="ok")log("Connected to Google Ads")});
 document.querySelectorAll('input[name="mode"]').forEach(function(r){r.addEventListener("change",function(){var o=$('input[name="mode"][value="old"]').checked;$("#m-new").hidden=o;$("#m-old").hidden=!o;document.querySelectorAll(".seg label").forEach(function(l){l.className=l.querySelector("input").checked?"on":""})})});
-</script></body></html>
+</script><script src="compare.js"></script><script src="options.js"></script><script src="edit-mode.js"></script>
+</body></html>

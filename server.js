@@ -148,29 +148,41 @@ async function campaignDetail(req, cid, id) {
   if (!campR.length) throw new Error("Campaign not found in this account.");
   const c = campR[0].campaign, bud = campR[0].campaignBudget || {};
   const isSearch = c.advertisingChannelType === "SEARCH", isPmax = c.advertisingChannelType === "PERFORMANCE_MAX";
+  // The remaining lookups don't depend on each other, so they run at the same time.
+  const kwWhere = " WHERE campaign.id = " + id + " AND ad_group_criterion.type = 'KEYWORD' AND ad_group_criterion.negative = FALSE AND ad_group_criterion.status != 'REMOVED'";
+  const rows = p => p.then(r => r.results || []);
+  const [metR, convR, locR, agR, adR, kwR, kwmR, negR, options] = await Promise.all([
+    rows(q("SELECT metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions" + (isSearch ? ", metrics.search_impression_share, metrics.search_budget_lost_impression_share" : "") + " FROM campaign WHERE campaign.id = " + id + " AND segments.date DURING LAST_30_DAYS")),
+    rows(q("SELECT conversion_action.id FROM conversion_action WHERE conversion_action.status = 'ENABLED'")),
+    rows(q("SELECT campaign_criterion.criterion_id FROM campaign_criterion WHERE campaign.id = " + id + " AND campaign_criterion.type = 'LOCATION' AND campaign_criterion.negative = FALSE AND campaign_criterion.status != 'REMOVED'")),
+    rows(q("SELECT ad_group.id, ad_group.status FROM ad_group WHERE campaign.id = " + id + " AND ad_group.status != 'REMOVED'")),
+    rows(q("SELECT ad_group.id, ad_group_ad.ad.responsive_search_ad.headlines, ad_group_ad.ad.responsive_search_ad.descriptions FROM ad_group_ad WHERE campaign.id = " + id + " AND ad_group_ad.status != 'REMOVED'")),
+    // Keyword metrics are only available FROM keyword_view, so list every keyword too (ones with no traffic don't appear there).
+    rows(q("SELECT ad_group.id, ad_group_criterion.criterion_id, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type FROM ad_group_criterion" + kwWhere)),
+    rows(q("SELECT ad_group.id, ad_group_criterion.criterion_id, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, metrics.impressions, metrics.clicks, metrics.cost_micros FROM keyword_view" + kwWhere + " AND segments.date DURING LAST_30_DAYS")),
+    rows(q("SELECT campaign_criterion.keyword.text FROM campaign_criterion WHERE campaign.id = " + id + " AND campaign_criterion.type = 'KEYWORD' AND campaign_criterion.negative = TRUE AND campaign_criterion.status != 'REMOVED'")),
+    readOptions(req, cid, id)
+  ]);
   const mAgg = { impressions: 0, clicks: 0, costMicros: 0, conversions: 0, imprShare: null, budgetLost: null };
-  ((await q("SELECT metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions" + (isSearch ? ", metrics.search_impression_share, metrics.search_budget_lost_impression_share" : "") + " FROM campaign WHERE campaign.id = " + id + " AND segments.date DURING LAST_30_DAYS")).results || []).forEach(x => {
+  metR.forEach(x => {
     const m = x.metrics || {}; mAgg.impressions += Number(m.impressions || 0); mAgg.clicks += Number(m.clicks || 0); mAgg.costMicros += Number(m.costMicros || 0); mAgg.conversions += Number(m.conversions || 0);
     if (m.searchImpressionShare != null) mAgg.imprShare = Number(m.searchImpressionShare) * 100;
     if (m.searchBudgetLostImpressionShare != null) mAgg.budgetLost = Number(m.searchBudgetLostImpressionShare) * 100;
   });
-  const convActions = ((await q("SELECT conversion_action.id FROM conversion_action WHERE conversion_action.status = 'ENABLED'")).results || []).length;
-  const locCount = ((await q("SELECT campaign_criterion.criterion_id FROM campaign_criterion WHERE campaign.id = " + id + " AND campaign_criterion.type = 'LOCATION' AND campaign_criterion.negative = FALSE AND campaign_criterion.status != 'REMOVED'")).results || []).length;
-  const adGroups = ((await q("SELECT ad_group.id, ad_group.status FROM ad_group WHERE campaign.id = " + id + " AND ad_group.status != 'REMOVED'")).results || []).map(x => x.adGroup);
+  const convActions = convR.length, locCount = locR.length, adGroups = agR.map(x => x.adGroup);
   const adCounts = {};
-  ((await q("SELECT ad_group.id, ad_group_ad.ad.responsive_search_ad.headlines, ad_group_ad.ad.responsive_search_ad.descriptions FROM ad_group_ad WHERE campaign.id = " + id + " AND ad_group_ad.status != 'REMOVED'")).results || []).forEach(x => {
+  adR.forEach(x => {
     const rsa = ((x.adGroupAd || {}).ad || {}).responsiveSearchAd || {};
     adCounts[(x.adGroup || {}).id] = { headlines: (rsa.headlines || []).length, descriptions: (rsa.descriptions || []).length };
   });
-  // Keyword metrics are only available FROM keyword_view, so list every keyword first, then add the 30-day metrics.
-  const kwAgg = {}, kwWhere = " WHERE campaign.id = " + id + " AND ad_group_criterion.type = 'KEYWORD' AND ad_group_criterion.negative = FALSE AND ad_group_criterion.status != 'REMOVED'";
+  const kwAgg = {};
   const kwAdd = x => {
     const crit = x.adGroupCriterion || {}, key = (x.adGroup || {}).id + "~" + crit.criterionId;
     if (!kwAgg[key]) kwAgg[key] = { adGroupId: (x.adGroup || {}).id, criterionId: crit.criterionId, text: (crit.keyword || {}).text, matchType: (crit.keyword || {}).matchType, impressions: 0, clicks: 0, costMicros: 0 };
     return kwAgg[key];
   };
-  ((await q("SELECT ad_group.id, ad_group_criterion.criterion_id, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type FROM ad_group_criterion" + kwWhere)).results || []).forEach(kwAdd);
-  ((await q("SELECT ad_group.id, ad_group_criterion.criterion_id, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, metrics.impressions, metrics.clicks, metrics.cost_micros FROM keyword_view" + kwWhere + " AND segments.date DURING LAST_30_DAYS")).results || []).forEach(x => {
+  kwR.forEach(kwAdd);
+  kwmR.forEach(x => {
     const k = kwAdd(x), m = x.metrics || {};
     k.impressions += Number(m.impressions || 0); k.clicks += Number(m.clicks || 0); k.costMicros += Number(m.costMicros || 0);
   });
@@ -178,8 +190,7 @@ async function campaignDetail(req, cid, id) {
   const kwItem = k => ({ text: k.text, resourceName: "customers/" + cid + "/adGroupCriteria/" + k.adGroupId + "~" + k.criterionId });
   const wasteful = keywords.filter(k => k.impressions >= 50 && k.clicks === 0).sort((a, b) => b.impressions - a.impressions);
   const lowCtr = keywords.filter(k => k.impressions >= 100 && k.clicks > 0 && k.clicks / k.impressions * 100 < KPI.lowCtrKeyword).sort((a, b) => b.costMicros - a.costMicros);
-  const negatives = ((await q("SELECT campaign_criterion.keyword.text FROM campaign_criterion WHERE campaign.id = " + id + " AND campaign_criterion.type = 'KEYWORD' AND campaign_criterion.negative = TRUE AND campaign_criterion.status != 'REMOVED'")).results || [])
-    .map(x => ((x.campaignCriterion || {}).keyword || {}).text).filter(Boolean);
+  const negatives = negR.map(x => ((x.campaignCriterion || {}).keyword || {}).text).filter(Boolean);
   const missingNegatives = RECOMMENDED_NEGATIVES.filter(t => !negatives.includes(t));
   const thinAds = adGroups.filter(ag => { const cc = adCounts[ag.id]; return !cc || cc.headlines < 8 || cc.descriptions < 3; });
 
@@ -265,9 +276,62 @@ async function campaignDetail(req, cid, id) {
     bidding: bidding || "?", budget: budget != null ? budget.toFixed(2) : "?", type: c.advertisingChannelType || "?",
     locations: locCount, adGroups: adGroups.length, keywords: keywords.length, negatives: negatives.length,
     metrics: { impressions: mAgg.impressions, clicks: mAgg.clicks, cost: costAud.toFixed(2), ctr: ctr.toFixed(2) + "%", avgCpc: avgCpc.toFixed(2), conversions: Math.round(mAgg.conversions * 10) / 10 },
-    kpis, suggestions
+    kpis, suggestions, options
   };
 }
+// Campaign options (AI Max, Search Network, Display Network, Target ROAS) as shown and edited on the Analysis page.
+async function readOptions(req, cid, id) {
+  const q = s => ads(req, "/customers/" + cid + "/googleAds:search", { query: s });
+  const r = ((await q("SELECT campaign.id, campaign.status, campaign.advertising_channel_type, campaign.bidding_strategy_type, campaign.network_settings.target_search_network, campaign.network_settings.target_content_network, campaign.maximize_conversion_value.target_roas, campaign.target_roas.target_roas FROM campaign WHERE campaign.id = " + id)).results || [])[0];
+  if (!r) return null;
+  const c = r.campaign, ns = c.networkSettings || {}, type = c.advertisingChannelType, bid = c.biddingStrategyType || "";
+  let aiMax = false;
+  // AI Max only exists on Search campaigns; read it separately so an older account or API version can't break the analysis.
+  if (type === "SEARCH") try { aiMax = !!((((await q("SELECT campaign.ai_max_setting.enable_ai_max FROM campaign WHERE campaign.id = " + id)).results || [])[0] || {}).campaign.aiMaxSetting || {}).enableAiMax; } catch (e) {}
+  const roasVal = bid === "TARGET_ROAS" ? (c.targetRoas || {}).targetRoas : bid === "MAXIMIZE_CONVERSION_VALUE" ? (c.maximizeConversionValue || {}).targetRoas : null;
+  return {
+    live: c.status === "ENABLED", type, bidding: bid,
+    aiMax, searchPartners: !!ns.targetSearchNetwork, display: !!ns.targetContentNetwork,
+    roas: !!roasVal, roasPct: roasVal ? Math.round(Number(roasVal) * 100) : null,
+    can: { aiMax: type === "SEARCH", networks: type === "SEARCH", roas: ["SEARCH", "PERFORMANCE_MAX", "DISPLAY", "SHOPPING"].includes(type) }
+  };
+}
+app.post("/api/campaigns/:id/options", async (req, res) => {
+  const cid = req.session.customerId, id = req.params.id, b = req.body || {};
+  if (!req.session.tokens || !cid) return res.status(400).json({ message: "Connect Google Ads and choose an account first." });
+  if (!/^\d+$/.test(id)) return res.status(400).json({ message: "Invalid campaign ID." });
+  try {
+    const cur = await readOptions(req, cid, id);
+    if (!cur) return res.json({ message: "Campaign not found in this account." });
+    if (!cur.live) return res.json({ message: "This campaign is not live, so its options can only be changed while it is running." });
+    const upd = { resourceName: "customers/" + cid + "/campaigns/" + id }, mask = [], changed = [];
+    const flag = (k, ok) => typeof b[k] === "boolean" && b[k] !== cur[k] && ok;
+    if (flag("aiMax", cur.can.aiMax)) { upd.aiMaxSetting = { enableAiMax: b.aiMax }; mask.push("ai_max_setting.enable_ai_max"); changed.push("aiMax"); }
+    if (flag("searchPartners", cur.can.networks) || flag("display", cur.can.networks)) {
+      upd.networkSettings = {};
+      if (typeof b.searchPartners === "boolean" && b.searchPartners !== cur.searchPartners) { upd.networkSettings.targetSearchNetwork = b.searchPartners; mask.push("network_settings.target_search_network"); changed.push("searchPartners"); }
+      if (typeof b.display === "boolean" && b.display !== cur.display) { upd.networkSettings.targetContentNetwork = b.display; mask.push("network_settings.target_content_network"); changed.push("display"); }
+    }
+    if (cur.can.roas && typeof b.roas === "boolean") {
+      const pct = Number(b.roasPct);
+      if (b.roas && !(pct >= 10 && pct <= 10000)) return res.json({ message: "Target ROAS must be between 10% and 10000%." });
+      if (b.roas && (!cur.roas || pct !== cur.roasPct)) { upd.maximizeConversionValue = { targetRoas: pct / 100 }; mask.push("maximize_conversion_value.target_roas"); changed.push("roas"); }
+      // Turning Target ROAS off moves the campaign to Maximise conversions with no target.
+      else if (!b.roas && cur.roas) { upd.maximizeConversions = {}; mask.push("maximize_conversions.target_cpa_micros"); changed.push("roas"); }
+    }
+    if (!mask.length) return res.json({ ok: true, changed: [], message: "Nothing changed." });
+    const validateOnly = b.validateOnly === true;
+    await ads(req, "/customers/" + cid + "/googleAds:mutate", { mutateOperations: [{ campaignOperation: { update: upd, updateMask: mask.join(",") } }], partialFailure: false, validateOnly });
+    if (validateOnly) return res.json({ ok: true, validated: true, changed });
+    const now = await readOptions(req, cid, id);
+    const bad = changed.filter(k => k === "roas" ? now.roas !== b.roas || (b.roas && now.roasPct !== Math.round(Number(b.roasPct))) : now[k] !== b[k]);
+    console.log(JSON.stringify({ t: new Date().toISOString(), event: "campaign_options", customer: cid, campaign: id, changed, unverified: bad }));
+    res.json(bad.length ? { message: "Google Ads accepted the change but " + bad.join(", ") + " did not read back as expected. Check it in Google Ads.", options: now } : { ok: true, changed, options: now });
+  } catch (e) {
+    console.error("campaign_options failed:", e.message, e.full ? JSON.stringify(e.full) : "");
+    res.json({ message: "Not changed. Google Ads said: " + e.message });
+  }
+});
 app.get("/api/campaigns/:id/detail", async (req, res) => {
   const cid = req.session.customerId;
   if (!req.session.tokens || !cid) return res.status(400).json({ error: "Connect Google Ads and choose an account first." });
@@ -283,6 +347,7 @@ app.post("/api/campaigns/:id/apply", async (req, res) => {
   if (!fixes.length) return res.json({ message: "Nothing selected." });
   try {
     const before = await campaignDetail(req, cid, id);
+    if (before.options && !before.options.live) return res.json({ message: "This campaign is paused, so suggestions can only be applied while it is live." });
     const sugg = sid => before.suggestions.find(s => s.id === sid && s.autofix);
     const money = (v, min, max) => { const a = Number(v); return isFinite(a) && a >= min && a <= max ? String(Math.round(a * 1e6)) : null; };
     const campRes = "customers/" + cid + "/campaigns/" + id, campUpd = { resourceName: campRes }, campMask = [];
@@ -341,14 +406,94 @@ app.post("/api/campaigns/:id/apply", async (req, res) => {
     res.json({ message: "Could not apply the changes. Google Ads said: " + e.message });
   }
 });
-// Lightweight multi-campaign fetch for side-by-side comparison.
+// Money settings and spend-related performance for side-by-side comparison, covering each campaign's whole life:
+// from its start date until today, whether it is live or stopped. Daily rates use only the days it actually ran.
+const ymd = d => d.toISOString().slice(0, 10);
+async function moneyData(req, cid, ids) {
+  const q = s => ads(req, "/customers/" + cid + "/googleAds:search", { query: s });
+  const inIds = "campaign.id IN (" + ids.join(",") + ")";
+  const camps = ((await q("SELECT campaign.id, campaign.name, campaign.status, campaign.start_date_time, campaign.advertising_channel_type, campaign.bidding_strategy_type, campaign.target_spend.cpc_bid_ceiling_micros, campaign.maximize_conversions.target_cpa_micros, campaign.target_cpa.target_cpa_micros, campaign.campaign_budget, campaign_budget.amount_micros, campaign_budget.explicitly_shared FROM campaign WHERE " + inIds)).results || []);
+  const today = new Date(), starts = camps.map(r => (r.campaign.startDateTime || "").slice(0, 10)).filter(Boolean).sort();
+  const from = starts[0] || ymd(new Date(today.getTime() - 365 * 864e5));
+  const days = {};
+  // A long history can run past one page of results, so follow the page tokens.
+  const all = async s => { let out = [], tok; do { const r = await ads(req, "/customers/" + cid + "/googleAds:search", tok ? { query: s, pageToken: tok } : { query: s }); out = out.concat(r.results || []); tok = r.nextPageToken; } while (tok); return out; };
+  ((await all("SELECT campaign.id, segments.date, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.search_impression_share, metrics.search_budget_lost_impression_share, metrics.search_rank_lost_impression_share FROM campaign WHERE " + inIds + " AND segments.date BETWEEN '" + from + "' AND '" + ymd(today) + "'"))).forEach(x => {
+    const m = x.metrics || {}, id = String(x.campaign.id);
+    if (!Number(m.impressions)) return;
+    (days[id] = days[id] || []).push({ date: x.segments.date, impr: Number(m.impressions), clicks: Number(m.clicks || 0), cost: Number(m.costMicros || 0) / 1e6, conv: Number(m.conversions || 0),
+      is: m.searchImpressionShare != null ? Number(m.searchImpressionShare) : null, lostB: m.searchBudgetLostImpressionShare != null ? Number(m.searchBudgetLostImpressionShare) : null, lostR: m.searchRankLostImpressionShare != null ? Number(m.searchRankLostImpressionShare) : null });
+  });
+  const micros = v => v ? Number(v) / 1e6 : null;
+  return ids.map(id => camps.find(r => String(r.campaign.id) === id)).filter(Boolean).map(r => {
+    const c = r.campaign, b = r.campaignBudget || {}, id = String(c.id);
+    const rows = days[id] || [], start = (c.startDateTime || "").slice(0, 10) || from, nDays = rows.length;
+    const period = "Since " + start + " (start) to today: " + nDays + " day(s) with ads showing";
+    const sum = k => rows.reduce((s, d) => s + d[k], 0);
+    // Impression shares are weighted by eligible impressions (impressions / share) so busy days count more.
+    let elig = 0, lostB = 0, lostR = 0, isDays = 0;
+    rows.forEach(d => { if (d.is > 0) { const e = d.impr / d.is; elig += e; lostB += e * (d.lostB || 0); lostR += e * (d.lostR || 0); isDays++; } });
+    const impr = sum("impr"), clicks = sum("clicks"), cost = sum("cost"), conv = sum("conv");
+    return {
+      id, name: c.name, status: c.status, type: c.advertisingChannelType, bidding: c.biddingStrategyType,
+      budget: micros(b.amountMicros), budgetResource: c.campaignBudget, budgetShared: !!b.explicitlyShared,
+      cpcCap: c.targetSpend ? micros(c.targetSpend.cpcBidCeilingMicros) : null,
+      targetCpa: c.biddingStrategyType === "TARGET_CPA" ? micros((c.targetCpa || {}).targetCpaMicros) : c.maximizeConversions ? micros(c.maximizeConversions.targetCpaMicros) : null,
+      live: c.status === "ENABLED",
+      editable: { budget: !b.explicitlyShared, cpcCap: c.biddingStrategyType === "TARGET_SPEND", targetCpa: ["MAXIMIZE_CONVERSIONS", "TARGET_CPA"].includes(c.biddingStrategyType) },
+      start, period: rows.length ? period : "Since " + start + " (start) to today: no ads shown yet", days: nDays,
+      perf: { impr, clicks, cost, conv, is: isDays ? impr / elig : null, lostBudget: isDays ? lostB / elig : null, lostRank: isDays ? lostR / elig : null }
+    };
+  });
+}
 app.get("/api/campaigns/compare", async (req, res) => {
   const cid = req.session.customerId;
   if (!req.session.tokens || !cid) return res.status(400).json({ error: "Connect Google Ads and choose an account first." });
-  const ids = String(req.query.ids || "").split(",").map(x => x.trim()).filter(x => /^\d+$/.test(x)).slice(0, 6);
+  const ids = String(req.query.ids || "").split(",").map(x => x.trim()).filter(x => /^\d+$/.test(x)).slice(0, 10);
   if (ids.length < 2) return res.status(400).json({ error: "Select at least two campaigns to compare." });
-  try { res.json({ campaigns: await Promise.all(ids.map(id => campaignDetail(req, cid, id))) }); }
+  try { res.json({ campaigns: await moneyData(req, cid, ids) }); }
   catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Updates one campaign's money settings (daily budget, max CPC, target CPA) in one request, then re-reads them to verify.
+app.post("/api/campaigns/:id/money", async (req, res) => {
+  const cid = req.session.customerId, id = req.params.id, body = req.body || {};
+  if (!req.session.tokens || !cid) return res.status(400).json({ message: "Connect Google Ads and choose an account first." });
+  if (!/^\d+$/.test(id)) return res.status(400).json({ message: "Invalid campaign ID." });
+  try {
+    const cur = (await moneyData(req, cid, [id]))[0];
+    if (!cur) return res.json({ message: "Campaign not found in this account." });
+    if (!cur.live) return res.json({ message: cur.name + " is not live, so its amounts can only be changed while it is running." });
+    const maxBudget = Number(E.MAX_DAILY_BUDGET) > 0 ? Number(E.MAX_DAILY_BUDGET) : 10000;
+    const amt = (v, min, max, label) => { const a = Number(v); if (!isFinite(a) || a < min || a > max) throw Object.assign(new Error(label + " must be between A$" + min + " and A$" + max + "."), { user: true }); return String(Math.round(a * 1e6)); };
+    const differs = (v, now) => v != null && v !== "" && (now == null || Math.abs(Number(v) - now) >= 0.005);
+    const ops = [], changed = [], campUpd = { resourceName: "customers/" + cid + "/campaigns/" + id }, mask = [];
+    if (differs(body.budget, cur.budget)) {
+      if (!cur.editable.budget) return res.json({ message: cur.name + ": the budget is shared with other campaigns, so change it in Google Ads." });
+      ops.push({ campaignBudgetOperation: { update: { resourceName: cur.budgetResource, amountMicros: amt(body.budget, 1, maxBudget, "Daily budget") }, updateMask: "amount_micros" } });
+      changed.push("budget");
+    }
+    if (differs(body.cpcCap, cur.cpcCap) && cur.editable.cpcCap) { campUpd.targetSpend = { cpcBidCeilingMicros: amt(body.cpcCap, 0.1, 100, "Maximum cost per click") }; mask.push("target_spend.cpc_bid_ceiling_micros"); changed.push("cpcCap"); }
+    if (differs(body.targetCpa, cur.targetCpa) && cur.editable.targetCpa) {
+      const v = amt(body.targetCpa, 1, 1000, "Target CPA");
+      if (cur.bidding === "TARGET_CPA") { campUpd.targetCpa = { targetCpaMicros: v }; mask.push("target_cpa.target_cpa_micros"); }
+      else { campUpd.maximizeConversions = { targetCpaMicros: v }; mask.push("maximize_conversions.target_cpa_micros"); }
+      changed.push("targetCpa");
+    }
+    if (mask.length) ops.unshift({ campaignOperation: { update: campUpd, updateMask: mask.join(",") } });
+    if (!ops.length) return res.json({ ok: true, changed: [], message: "Nothing changed." });
+    const validateOnly = body.validateOnly === true;
+    await ads(req, "/customers/" + cid + "/googleAds:mutate", { mutateOperations: ops, partialFailure: false, validateOnly });
+    if (validateOnly) return res.json({ ok: true, validated: true, changed });
+    const now = (await moneyData(req, cid, [id]))[0];
+    const want = { budget: body.budget, cpcCap: body.cpcCap, targetCpa: body.targetCpa };
+    const unverified = changed.filter(k => Math.abs(Number(now[k]) - Number(want[k])) >= 0.005);
+    console.log(JSON.stringify({ t: new Date().toISOString(), event: "campaign_money", customer: cid, campaign: id, changed, unverified }));
+    res.json(unverified.length ? { message: "Google Ads accepted the change but " + unverified.join(", ") + " did not read back as expected. Check it in Google Ads.", now } : { ok: true, changed, now });
+  } catch (e) {
+    if (e.user) return res.json({ message: e.message });
+    console.error("campaign_money failed:", e.message, e.full ? JSON.stringify(e.full) : "");
+    res.json({ message: "Not changed. Google Ads said: " + e.message });
+  }
 });
 // Start (ENABLED) or stop (PAUSED) an existing campaign, then re-read it from Google Ads to verify.
 app.post("/api/campaigns/status", async (req, res) => {
@@ -395,6 +540,10 @@ app.post("/api/campaigns/create", async (req, res) => {
     if (missing.length) return res.json({ message: "These suburbs could not be matched to a Google location, so nothing was created: " + missing.join(", ") + "." });
     const ops = campaign.buildOps(b, cid, geo);
     if (ops.length > 5000) return res.json({ message: "Too many items (" + ops.length + "). Select fewer suburbs or products. Nothing was created." });
+    if (b.validateOnly === true) {
+      await ads(req, "/customers/" + cid + "/googleAds:mutate", { mutateOperations: ops, partialFailure: false, validateOnly: true });
+      return res.json({ ok: true, validated: true, operations: ops.length });
+    }
     await ads(req, "/customers/" + cid + "/googleAds:mutate", { mutateOperations: ops, partialFailure: false });
     const c = await findByName(req, cid, b.name);
     if (!c) return res.json({ message: "Google Ads accepted the request but the campaign could not be found afterwards. Check Google Ads before trying again." });
@@ -412,5 +561,6 @@ app.post("/api/campaigns/create", async (req, res) => {
     res.json({ message: found ? "Google Ads reported an error, but a campaign with this name exists (ID " + found.campaign.id + "). Check it in Google Ads before trying again. " + e.message : "Nothing was created. Google Ads said: " + e.message });
   } finally { creating.delete(req.sessionID); }
 });
+require("./edit")(app, { ads, resolveGeo, campaign, readOptions, E });
 app.use(express.static(path.join(__dirname, "public")));
 app.listen(PORT, () => console.log("Campaign builder running at " + BASE + (missing.length ? " (setup needed: " + missing.join(", ") + ")" : "")));
