@@ -129,8 +129,9 @@ function needAcct(req, res) {
   return req.session.customerId;
 }
 async function campaigns(req, cid) {
-  const r = await ads(req, "/customers/" + cid + "/googleAds:search", { query: "SELECT campaign.id, campaign.name, campaign.status, campaign_budget.amount_micros FROM campaign WHERE campaign.status != 'REMOVED' ORDER BY campaign.id DESC LIMIT 100" });
-  return (r.results || []).map(x => ({ id: String(x.campaign.id), name: x.campaign.name, status: x.campaign.status,
+  const r = await ads(req, "/customers/" + cid + "/googleAds:search", { query: "SELECT campaign.id, campaign.name, campaign.status, campaign.start_date_time, campaign_budget.amount_micros FROM campaign WHERE campaign.status != 'REMOVED' ORDER BY campaign.id DESC LIMIT 100" });
+  // Google Ads has no creation date field; the start date is set to the creation day unless someone picked another.
+  return (r.results || []).map(x => ({ id: String(x.campaign.id), name: x.campaign.name, status: x.campaign.status, created: (x.campaign.startDateTime || "").slice(0, 10),
     budget: x.campaignBudget && x.campaignBudget.amountMicros ? (x.campaignBudget.amountMicros / 1e6).toFixed(2) : "?" }));
 }
 app.get("/api/campaigns", async (req, res) => {
